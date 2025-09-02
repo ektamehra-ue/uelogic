@@ -24,7 +24,7 @@ services:
       dockerfile: devops/Dockerfile
     command: bash -lc "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     env_file: .env
-    working_dir: /app/backend   # see Dockerfile changes below
+    working_dir: /app/backend  
     volumes:
       - ./backend:/app/backend
     ports:
