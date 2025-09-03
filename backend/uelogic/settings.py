@@ -2,17 +2,13 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
-
-# Base Config
+# --- Base ---
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "True") == "True"
-
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
-
-# Installed Apps
+# --- Apps ---
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -26,15 +22,15 @@ INSTALLED_APPS = [
     "corsheaders",
 
     # Local
-    "api",  # your core app
+    "api",
 ]
 
-
-# Middleware
+# --- Middleware ---
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",        # WhiteNoise early
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "corsheaders.middleware.CorsMiddleware",  # must come before CommonMiddleware
+    "corsheaders.middleware.CorsMiddleware",             # before CommonMiddleware
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -44,8 +40,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "uelogic.urls"
 
-
-# Templates
+# --- Templates ---
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -64,8 +59,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "uelogic.wsgi.application"
 
-
-# Database (Postgres)
+# --- Database (Postgres) ---
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -77,8 +71,7 @@ DATABASES = {
     }
 }
 
-
-# Authentication / DRF
+# --- DRF / Auth ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -88,7 +81,6 @@ REST_FRAMEWORK = {
     ),
 }
 
-# JWT Settings
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
@@ -96,8 +88,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
-
-# Password validation
+# --- Passwords ---
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -105,24 +96,40 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-
-# Internationalization
+# --- I18N ---
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-
-# Static / Media
+# --- Static / Media ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# CORS
-CORS_ALLOW_ALL_ORIGINS = True  # for dev; tighten for prod
+# WhiteNoise storage (note the class name spelling)
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
+# --- CORS (explicit origins for local FE) ---
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
-# Default primary key field type
+# Optional: if you use CSRF cookies with a browser FE later
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
+# --- Defaults ---
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- Optional security toggles for prod (enabled when DEBUG=False) ---
+if not DEBUG:
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
