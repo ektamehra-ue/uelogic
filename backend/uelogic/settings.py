@@ -22,7 +22,7 @@ INSTALLED_APPS = [
     "corsheaders",
 
     # Local
-    "src.api",
+    "api",
 ]
 
 # --- Middleware ---

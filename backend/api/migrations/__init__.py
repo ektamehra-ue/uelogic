@@ -1,0 +1,1 @@
+# keeps migrations a proper Python package
