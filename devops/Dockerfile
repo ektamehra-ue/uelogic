@@ -1,12 +1,11 @@
 # Use official lightweight Python image
 FROM python:3.11-slim
 
-# System deps (Postgres client headers, etc.)
+# System deps (add postgresql-client here)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc curl \
+    libpq-dev gcc curl postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
 WORKDIR /app/backend
 
 # Copy only requirements first for better layer caching
@@ -17,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ /app/backend/
 
 # Non-root user (good practice)
-RUN useradd -m appuser
+RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Expose port and default command handled by docker-compose

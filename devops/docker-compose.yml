@@ -1,5 +1,4 @@
 # docker-compose.yml
-version: "3.9"
 services:
   db:
     image: postgres:15
@@ -9,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+    - "5433:5432"   # host:container (use 5433 on host if 5432 is busy)
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
