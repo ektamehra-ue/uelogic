@@ -95,3 +95,42 @@ class VirtualAllocation(models.Model):
         return f"{self.parent.identifier} → {self.child.identifier} ({self.percent}%)"
 
 
+# --- Readings ---
+class Reading(models.Model):
+    """
+    Time series values for a meter.
+    - unique_together (meter, ts) -> ensures you don’t double-ingest the same timestamp for a meter.
+    - classification/kind/source -> provenance + semantics.
+    """
+    class Classification(models.TextChoices):
+        ACTUAL = "Actual", "Actual"
+        ESTIMATED = "Estimated", "Estimated"
+        MANUAL = "Manual", "Manual"
+        SYSTEM = "System", "System"
+
+    class Source(models.TextChoices):
+        API = "API", "API"
+        CSV = "CSV", "CSV"
+        MANUAL = "Manual", "Manual"
+
+    class Kind(models.TextChoices):
+        ACCUMULATED = "Accumulated", "Accumulated"  # cumulative register (e.g., kWh totalizer)
+        CONSUMPTION = "Consumption", "Consumption"  # interval usage (e.g., kWh during period)
+
+    meter = models.ForeignKey(Meter, on_delete=models.CASCADE, related_name="readings")
+    ts = models.DateTimeField(db_index=True)  # timestamp in UTC ideally
+    value = models.DecimalField(max_digits=18, decimal_places=6)
+    unit = models.CharField(max_length=32)
+    classification = models.CharField(max_length=10, choices=Classification.choices,
+                                      default=Classification.ACTUAL)
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.CSV)
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.CONSUMPTION)
+
+    class Meta:
+        unique_together = ("meter", "ts")
+        indexes = [
+            models.Index(fields=["meter", "ts"]),
+        ]
+
+    def __str__(self):
+        return f"{self.meter.identifier} @ {self.ts} = {self.value} {self.unit}"
