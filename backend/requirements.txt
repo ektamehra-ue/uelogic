@@ -6,3 +6,4 @@ psycopg2-binary
 whitenoise
 httpx
 tenacity
+django-filter
