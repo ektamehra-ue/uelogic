@@ -67,6 +67,81 @@ class Command(BaseCommand):
         missing = [k for k in required if not col[k]]
         if missing:
             raise CommandError(f"Missing required column(s): {', '.join(missing)}. Found headers: {headers}")
+        
+                # Caches to avoid repeated DB lookups
+        org_cache = {}
+        bld_cache = defaultdict(dict)   # org_id -> {building_name: Building}
+        acct_cache = defaultdict(dict)  # org_id -> {account_name: Account}
+        meter_buffer = []               # collect first pass
+        parent_links = []               # (org_obj, child_meter_identifier, parent_identifier)
+
+        created_counts = dict(org=0, building=0, account=0, meter=0)
+        row_count = 0
+
+        # First pass: create org/building/account, buffer meters (parent may not exist yet)
+        for r in rows[1:]:
+            if not any(r):  # skip completely empty lines
+                continue
+            row_count += 1
+
+            org_name = norm(r[header_to_idx[col["org"]]])
+            bld_name = norm(r[header_to_idx[col["building"]]])
+            acct_name = norm(r[header_to_idx[col["account"]]]) if col["account"] else ""
+            identifier = norm(r[header_to_idx[col["identifier"]]])
+            external_id = norm(r[header_to_idx[col["external_id"]]]) if col["external_id"] else ""
+            meter_type = norm(r[header_to_idx[col["meter_type"]]]).lower()
+            parent_identifier = norm(r[header_to_idx[col["parent_identifier"]]]) if col["parent_identifier"] else ""
+            unit = norm(r[header_to_idx[col["unit"]]])
+            is_active_raw = norm(r[header_to_idx[col["is_active"]]]) if col["is_active"] else "true"
+            is_active = (is_active_raw or "true").lower() in {"1", "true", "yes", "y"}
+
+            # get/create org
+            org_obj = org_cache.get(org_name)
+            if not org_obj and not dry:
+                org_obj, created = Organization.objects.get_or_create(name=org_name)
+                org_cache[org_name] = org_obj
+                if created:
+                    created_counts["org"] += 1
+
+            # get/create building
+            bld_obj = None
+            if org_obj:
+                bld_obj = bld_cache[org_obj.id].get(bld_name)
+                if not bld_obj and not dry:
+                    bld_obj, created = Building.objects.get_or_create(org=org_obj, name=bld_name)
+                    bld_cache[org_obj.id][bld_name] = bld_obj
+                    if created:
+                        created_counts["building"] += 1
+
+            # get/create account
+            acct_obj = None
+            if acct_name and org_obj and not dry:
+                acct_obj = acct_cache[org_obj.id].get(acct_name)
+                if not acct_obj:
+                    acct_obj, created = Account.objects.get_or_create(org=org_obj, name=acct_name)
+                    acct_cache[org_obj.id][acct_name] = acct_obj
+                    if created:
+                        created_counts["account"] += 1
+
+            # buffer meter (create in second pass so parents can be resolved)
+            meter_buffer.append({
+                "org_name": org_name,
+                "org_obj": org_obj,
+                "building_name": bld_name,
+                "building_obj": bld_obj,
+                "account_name": acct_name,
+                "account_obj": acct_obj,
+                "identifier": identifier,
+                "external_id": external_id or None,
+                "meter_type": meter_type,
+                "parent_identifier": parent_identifier or None,
+                "unit": unit,
+                "is_active": is_active,
+            })
+
+            if parent_identifier:
+                parent_links.append((org_obj, identifier, parent_identifier))
+
 
 
 
