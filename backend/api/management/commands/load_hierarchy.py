@@ -27,6 +27,7 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         delimiter = options["delimiter"]
 
+        
         # Column aliases to be flexible with headings
         aliases = {
             "organization": ["organization", "org", "organization name", "org name"],
@@ -46,5 +47,26 @@ class Command(BaseCommand):
                     if h.lower().strip() == alias:
                         return h
             return None
+        
+        
+        # Read CSV
+        with csv_path.open(newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            rows = list(reader)
+
+        if not rows:
+            self.stdout.write(self.style.WARNING("Empty CSV"))
+            return
+
+        headers = [h.strip() for h in rows[0]]
+        header_to_idx = {h: i for i, h in enumerate(headers)}
+
+        # Map column names found
+        col = {k: resolve_key(header_to_idx, k) for k in aliases}
+        required = ["org", "building", "identifier", "meter_type", "unit"]
+        missing = [k for k in required if not col[k]]
+        if missing:
+            raise CommandError(f"Missing required column(s): {', '.join(missing)}. Found headers: {headers}")
+
 
 
