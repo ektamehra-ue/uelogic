@@ -46,7 +46,7 @@ class Command(BaseCommand):
                     return headers_lower.index(c_low)
             return None
 
-        # Detect columns (org optional)
+        # Detect columns
         org_idx = idx_of("org", "organization", "organisation")
         parent_idx = idx_of("parent_identifier", "parent id", "parent", "parent_meter")
         child_idx = idx_of("child_identifier", "child id", "child", "child_meter")
@@ -54,3 +54,19 @@ class Command(BaseCommand):
 
         if parent_idx is None or child_idx is None or percent_idx is None:
             raise CommandError(f"CSV must include parent/child/percent columns. Found: {headers}")
+        
+        # If org column not present, require --org and resolve it now
+        org_obj = None
+        if org_idx is None:
+            if not org_name_cli:
+                raise CommandError("No org column in CSV. Provide --org <Organization Name>.")
+            try:
+                org_obj = Organization.objects.get(name=org_name_cli)
+            except Organization.DoesNotExist:
+                raise CommandError(f"Organization not found: {org_name_cli}")
+
+        created = 0
+        updated = 0
+        total = 0
+
+        
