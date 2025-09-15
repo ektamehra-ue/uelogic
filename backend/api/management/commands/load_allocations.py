@@ -69,4 +69,39 @@ class Command(BaseCommand):
         updated = 0
         total = 0
 
-        
+        with csv_path.open(newline="", encoding="utf-8-sig") as f, transaction.atomic():
+            reader = csv.reader(f, delimiter=delimiter)
+            next(reader, None)  # skip header row
+
+            for row in reader:
+                if not row:
+                    continue
+                total += 1
+
+                # Resolve org per row if CSV has an org column
+                row_org_obj = org_obj
+                if org_idx is not None:
+                    org_name = norm(row[org_idx])
+                    try:
+                        row_org_obj = Organization.objects.get(name=org_name)
+                    except Organization.DoesNotExist:
+                        raise CommandError(f"Row {total}: Organization not found: {org_name}")
+
+                parent_ident = norm(row[parent_idx])
+                child_ident = norm(row[child_idx])
+
+                # Prevent self-allocation
+                if parent_ident == child_ident:
+                    raise CommandError(f"Row {total}: parent and child identifiers are the same ({parent_ident}).")
+
+                # Parse percent (allow a trailing %)
+                pct_raw = norm(row[percent_idx]).rstrip("%")
+                try:
+                    pct = float(pct_raw)
+                except ValueError:
+                    raise CommandError(f"Row {total}: invalid percent value: {row[percent_idx]!r}")
+
+                if pct < 0 or pct > 100:
+                    raise CommandError(f"Row {total}: percent out of range 0–100: {pct}")
+                
+
