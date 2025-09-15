@@ -122,6 +122,20 @@ class Command(BaseCommand):
                 if dry:
                     # Validate-only mode—skip DB writes
                     continue
+                # Upsert by (parent, child)
+                va, created_flag = VirtualAllocation.objects.update_or_create(
+                    parent=parent,
+                    child=child,
+                    defaults={"percent": pct},
+                )
+                if created_flag:
+                    created += 1
+                else:
+                    updated += 1
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Processed {total} rows. Created: {created}, Updated: {updated}."
+        ))
 
                 
 
