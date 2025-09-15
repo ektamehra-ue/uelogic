@@ -143,6 +143,7 @@ class Command(BaseCommand):
             if parent_identifier:
                 parent_links.append((org_obj, identifier, parent_identifier))
 
+        
         # Second pass: create meters, then wire parents
         with transaction.atomic():
             # create meters
@@ -181,6 +182,15 @@ class Command(BaseCommand):
                 if child.parent_id != parent.id:
                     child.parent = parent
                     child.save(update_fields=["parent"])
+
+        # Summary
+        self.stdout.write(self.style.SUCCESS(f"Processed {row_count} rows. Created: "
+                                            f"{created_counts['org']} orgs, "
+                                            f"{created_counts['building']} buildings, "
+                                            f"{created_counts['account']} accounts, "
+                                            f"{created_counts['meter']} meters."))
+
+
 
 
 
