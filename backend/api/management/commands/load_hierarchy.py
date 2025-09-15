@@ -63,7 +63,7 @@ class Command(BaseCommand):
 
         # Map column names found
         col = {k: resolve_key(header_to_idx, k) for k in aliases}
-        required = ["org", "building", "identifier", "meter_type", "unit"]
+        required = ["organization", "building", "identifier", "meter_type", "unit"]
         missing = [k for k in required if not col[k]]
         if missing:
             raise CommandError(f"Missing required column(s): {', '.join(missing)}. Found headers: {headers}")
@@ -79,13 +79,13 @@ class Command(BaseCommand):
         row_count = 0
 
         
-        # First pass: create org/building/account, buffer meters (parent may not exist yet)
+        # First pass: create organization/building/account, buffer meters (parent may not exist yet)
         for r in rows[1:]:
             if not any(r):  # skip completely empty lines
                 continue
             row_count += 1
 
-            org_name = norm(r[header_to_idx[col["org"]]])
+            org_name = norm(r[header_to_idx[col["organization"]]])
             bld_name = norm(r[header_to_idx[col["building"]]])
             acct_name = norm(r[header_to_idx[col["account"]]]) if col["account"] else ""
             identifier = norm(r[header_to_idx[col["identifier"]]])
@@ -98,7 +98,7 @@ class Command(BaseCommand):
 
             # get/create org
             org_obj = org_cache.get(org_name)
-            if not org_obj and not dry:
+            if not org_obj and not dry_run:
                 org_obj, created = Organization.objects.get_or_create(name=org_name)
                 org_cache[org_name] = org_obj
                 if created:
@@ -108,7 +108,7 @@ class Command(BaseCommand):
             bld_obj = None
             if org_obj:
                 bld_obj = bld_cache[org_obj.id].get(bld_name)
-                if not bld_obj and not dry:
+                if not bld_obj and not dry_run:
                     bld_obj, created = Building.objects.get_or_create(org=org_obj, name=bld_name)
                     bld_cache[org_obj.id][bld_name] = bld_obj
                     if created:
@@ -116,7 +116,7 @@ class Command(BaseCommand):
 
             # get/create account
             acct_obj = None
-            if acct_name and org_obj and not dry:
+            if acct_name and org_obj and not dry_run:
                 acct_obj = acct_cache[org_obj.id].get(acct_name)
                 if not acct_obj:
                     acct_obj, created = Account.objects.get_or_create(org=org_obj, name=acct_name)
@@ -148,7 +148,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             # create meters
             for m in meter_buffer:
-                if dry:
+                if dry_run:
                     continue
                 org_obj = m["org_obj"]
                 if not org_obj:
@@ -175,7 +175,7 @@ class Command(BaseCommand):
 
             # wire parents
             for org_obj, child_ident, parent_ident in parent_links:
-                if dry:
+                if dry_run:
                     continue
                 child = Meter.objects.get(org=org_obj, identifier=child_ident)
                 parent = Meter.objects.get(org=org_obj, identifier=parent_ident)
