@@ -68,7 +68,7 @@ class Command(BaseCommand):
         if missing:
             raise CommandError(f"Missing required column(s): {', '.join(missing)}. Found headers: {headers}")
         
-                # Caches to avoid repeated DB lookups
+        # Caches to avoid repeated DB lookups
         org_cache = {}
         bld_cache = defaultdict(dict)   # org_id -> {building_name: Building}
         acct_cache = defaultdict(dict)  # org_id -> {account_name: Account}
@@ -78,6 +78,7 @@ class Command(BaseCommand):
         created_counts = dict(org=0, building=0, account=0, meter=0)
         row_count = 0
 
+        
         # First pass: create org/building/account, buffer meters (parent may not exist yet)
         for r in rows[1:]:
             if not any(r):  # skip completely empty lines
@@ -141,6 +142,45 @@ class Command(BaseCommand):
 
             if parent_identifier:
                 parent_links.append((org_obj, identifier, parent_identifier))
+
+        # Second pass: create meters, then wire parents
+        with transaction.atomic():
+            # create meters
+            for m in meter_buffer:
+                if dry:
+                    continue
+                org_obj = m["org_obj"]
+                if not org_obj:
+                    raise CommandError(f"Row with missing org could not be created (identifier={m['identifier']}).")
+
+                # Ensure building exists (safety if bld_obj was None in pass 1 due to dry-run toggling)
+                bld_obj = m["building_obj"] or Building.objects.get(org=org_obj, name=m["building_name"])
+                acct_obj = m["account_obj"]
+
+                meter, created = Meter.objects.get_or_create(
+                    org=org_obj,
+                    identifier=m["identifier"],
+                    defaults=dict(
+                        building=bld_obj,
+                        account=acct_obj,
+                        external_id=m["external_id"],
+                        meter_type=m["meter_type"],
+                        unit=m["unit"],
+                        is_active=m["is_active"],
+                    ),
+                )
+                if created:
+                    created_counts["meter"] += 1
+
+            # wire parents
+            for org_obj, child_ident, parent_ident in parent_links:
+                if dry:
+                    continue
+                child = Meter.objects.get(org=org_obj, identifier=child_ident)
+                parent = Meter.objects.get(org=org_obj, identifier=parent_ident)
+                if child.parent_id != parent.id:
+                    child.parent = parent
+                    child.save(update_fields=["parent"])
 
 
 
