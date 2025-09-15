@@ -18,6 +18,9 @@ class Command(BaseCommand):
         parser.add_argument("csv_path", type=str, help="Path to hierarchy CSV (e.g., ../../data/hierarchy.csv)")
         parser.add_argument("--dry-run", action="store_true", help="Parse and report only, no DB writes")
         parser.add_argument("--delimiter", default=",", help="CSV delimiter (default ,)")
+        parser.add_argument("--default-unit", default="kWh", help="Unit to use when CSV lacks a unit column/value")
+        parser.add_argument("--default-meter-type", default="sub", choices=["fiscal","sub","virtual"],
+                            help="Meter type to use when CSV lacks/unknown meter_type")
 
     def handle(self, *args, **options):
         csv_path = Path(options["csv_path"])
@@ -30,16 +33,16 @@ class Command(BaseCommand):
         
         # Column aliases to be flexible with headings
         aliases = {
-            "organization": ["organization", "org", "organization name", "org name"],
-            "building": ["building", "building name", "site", "site name"],
-            "account": ["account", "account name", "customer", "customer name"],
-            "identifier": {"identifier", "meter_identifier", "meter id", "meter", "meter_ref"},
-            "external_id": {"external_id", "external id", "source_id"},
-            "meter_type": {"meter_type", "type"},
-            "parent_identifier": {"parent_identifier", "parent id", "parent"},
-            "unit": {"unit", "uom"},
-            "is_active": {"is_active", "active", "enabled"},
-        }
+        "organization": {"org", "organization", "organisation", "business name"},
+        "building": {"building", "site", "sitename"},
+        "account": {"account", "tenant", "cost_center", "cost centre", "suite"},
+        "identifier": {"identifier", "meter_identifier", "meter point", "meterpointreferenceid", "meter id", "meter", "meter_ref"},
+        "external_id": {"external_id", "external id", "source_id", "meter serial", "meterserialnumber"},
+        "meter_type": {"meter_type", "type", "meterkind", "expected data source"},  # we'll infer if needed
+        "parent_identifier": {"parent_identifier", "parent id", "parent"},          # plus: we’ll also read “Child 1..4” as children->parents
+        "unit": {"unit", "uom"},                                                    # will use default if missing
+        "is_active": {"is_active", "active", "enabled", "registration status"},
+    }
 
         def resolve_key(header_to_idx, key):
             for alias in aliases[key]:
