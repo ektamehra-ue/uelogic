@@ -103,5 +103,25 @@ class Command(BaseCommand):
 
                 if pct < 0 or pct > 100:
                     raise CommandError(f"Row {total}: percent out of range 0–100: {pct}")
+
+                # Look up meters with informative errors
+                try:
+                    parent = Meter.objects.get(org=row_org_obj, identifier=parent_ident)
+                except Meter.DoesNotExist:
+                    raise CommandError(f"Row {total}: parent meter not found (identifier={parent_ident})")
+                except Meter.MultipleObjectsReturned:
+                    raise CommandError(f"Row {total}: multiple parent meters found (identifier={parent_ident})")
+
+                try:
+                    child = Meter.objects.get(org=row_org_obj, identifier=child_ident)
+                except Meter.DoesNotExist:
+                    raise CommandError(f"Row {total}: child meter not found (identifier={child_ident})")
+                except Meter.MultipleObjectsReturned:
+                    raise CommandError(f"Row {total}: multiple child meters found (identifier={child_ident})")
+
+                if dry:
+                    # Validate-only mode—skip DB writes
+                    continue
+
                 
 
