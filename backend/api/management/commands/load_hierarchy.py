@@ -192,9 +192,3 @@ class Command(BaseCommand):
                                             f"{created_counts['building']} buildings, "
                                             f"{created_counts['account']} accounts, "
                                             f"{created_counts['meter']} meters."))
-
-
-
-
-
-
