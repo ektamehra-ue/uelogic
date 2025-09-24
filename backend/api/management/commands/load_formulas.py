@@ -136,3 +136,45 @@ class Command(BaseCommand):
 
                 if end_dt is not None and start_dt >= end_dt:
                     raise CommandError(f"Row {i}: start must be < end (got start={start_dt}, end={end_dt}).")
+
+                # Look up target meter
+                try:
+                    target = Meter.objects.get(org=org_obj, identifier=target_ident)
+                except Meter.DoesNotExist:
+                    raise CommandError(f"Row {i}: target meter not found (identifier={target_ident!r})")
+                except Meter.MultipleObjectsReturned:
+                    raise CommandError(f"Row {i}: multiple target meters found (identifier={target_ident!r})")
+
+                if target.meter_type != "virtual":
+                    raise CommandError(f"Row {i}: target meter {target_ident!r} is not virtual (found {target.meter_type}).")
+
+                # (Optional) lightweight overlap check for same target
+                overlaps = Formula.objects.filter(target_meter=target)
+                if end_dt is None:
+                    overlaps = overlaps.filter(end__isnull=True) | overlaps.filter(end__gt=start_dt)
+                else:
+                    overlaps = overlaps.filter(start__lt=end_dt).filter(models.Q(end__isnull=True) | models.Q(end__gt=start_dt))
+
+                # If replacing exact windows, delete only exact match on (target,start,end)
+                if replace:
+                    Formula.objects.filter(target_meter=target, start=start_dt, end=end_dt).delete()
+
+                if dry:
+                    # Only validate; skip writes
+                    continue
+
+                # Upsert keyed by (target_meter, start, end)
+                obj, created_flag = Formula.objects.update_or_create(
+                    target_meter=target,
+                    start=start_dt,
+                    end=end_dt,
+                    defaults={"expression": expression},
+                )
+                if created_flag:
+                    created += 1
+                else:
+                    updated += 1
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Processed {total} rows. Created: {created}, Updated: {updated}."
+        ))
