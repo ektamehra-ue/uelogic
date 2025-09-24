@@ -81,4 +81,19 @@ class Command(BaseCommand):
                 if c_low in headers_lower:
                     return headers_lower.index(c_low)
             return None
+        
+        #Explected flixible columns
+        org_idx = idx_of("org", "organization", "organisation")
+        target_idx = idx_of("target_identifier", "target", "meter", "virtual_identifier", "virtual meter")
+        expr_idx = idx_of("expression", "expr", "formula")
+        start_idx = idx_of("start", "start_utc", "begin", "valid_from")
+        end_idx = idx_of("end", "end_utc", "valid_to", "stop")
+
+        missing = [name for name, idx in {
+            "target_identifier": target_idx,
+            "expression": expr_idx,
+            "start": start_idx,
+        }.items() if idx is None]
+        if missing:
+            raise CommandError(f"CSV missing required column(s): {', '.join(missing)}. Found: {headers}")
 
