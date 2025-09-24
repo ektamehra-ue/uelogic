@@ -82,7 +82,7 @@ class Command(BaseCommand):
                     return headers_lower.index(c_low)
             return None
         
-        #Explected flixible columns
+        # Explected flixible columns
         org_idx = idx_of("org", "organization", "organisation")
         target_idx = idx_of("target_identifier", "target", "meter", "virtual_identifier", "virtual meter")
         expr_idx = idx_of("expression", "expr", "formula")
@@ -97,3 +97,42 @@ class Command(BaseCommand):
         if missing:
             raise CommandError(f"CSV missing required column(s): {', '.join(missing)}. Found: {headers}")
 
+        # Resolve org if column absent
+        default_org = None
+        if org_idx is None:
+            if not org_name_cli:
+                raise CommandError("No org column in CSV. Provide --org <Organization Name>.")
+            try:
+                default_org = Organization.objects.get(name=org_name_cli)
+            except Organization.DoesNotExist:
+                raise CommandError(f"Organization not found: {org_name_cli}")
+
+        created = 0
+        updated = 0
+        total = 0
+
+        with csv_path.open(newline="", encoding="utf-8-sig") as f, transaction.atomic():
+            reader = csv.reader(f, delimiter=delimiter)
+            next(reader, None)  # skip header
+
+            for i, row in enumerate(reader, start=2):  # start=2 for human line numbers (header=1)
+                if not row:
+                    continue
+                total += 1
+
+                # org per-row
+                org_obj = default_org
+                if org_idx is not None:
+                    org_name = norm(row[org_idx])
+                    try:
+                        org_obj = Organization.objects.get(name=org_name)
+                    except Organization.DoesNotExist:
+                        raise CommandError(f"Row {i}: Organization not found: {org_name!r}")
+
+                target_ident = norm(row[target_idx])
+                expression = row[expr_idx]  # keep as-is (don’t strip internal spaces)
+                start_dt = parse_utc(row[start_idx], i)
+                end_dt = parse_utc(row[end_idx], i) if end_idx is not None else None
+
+                if end_dt is not None and start_dt >= end_dt:
+                    raise CommandError(f"Row {i}: start must be < end (got start={start_dt}, end={end_dt}).")
