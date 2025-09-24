@@ -55,7 +55,6 @@ class Command(BaseCommand):
 
 
     def handle(self, *args, **opts):
-        def handle(self, *args, **opts):
         csv_path = Path(opts["csv_path"]).resolve()
         if not csv_path.exists():
             raise CommandError(f"CSV not found: {csv_path}")
