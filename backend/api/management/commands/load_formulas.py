@@ -62,6 +62,11 @@ class Command(BaseCommand):
         delimiter = opts["delimiter"]
         replace = opts["replace"]
 
+        # initialize counters here
+        created = 0
+        updated = 0
+        total = 0
+
         # Read header safely
         with csv_path.open(newline="", encoding="utf-8-sig") as f:
             reader = csv.reader(f, delimiter=delimiter)
@@ -108,6 +113,8 @@ class Command(BaseCommand):
             except Organization.DoesNotExist:
                 raise CommandError(f"Organization not found: {org_name_cli}")
             
+
+            
         with csv_path.open(newline="", encoding="utf-8-sig") as f, transaction.atomic():
             reader = csv.reader(f, delimiter=delimiter)
             next(reader, None)  # skip header
@@ -129,7 +136,7 @@ class Command(BaseCommand):
                 site_name = None
                 if site_idx is not None:
                     site_name = norm(row[site_idx]) or None
-                    
+
                 # Resolve org (prefer explicit org, else infer via site, else fallback to --org)
                 row_org_obj = None
                 if org_idx is not None:
