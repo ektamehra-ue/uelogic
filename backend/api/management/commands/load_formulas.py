@@ -62,7 +62,7 @@ class Command(BaseCommand):
         delimiter = opts["delimiter"]
         replace = opts["replace"]
 
-        # initialize counters here
+        # initialize counters for reporting
         created = 0
         updated = 0
         total = 0
@@ -172,29 +172,47 @@ class Command(BaseCommand):
                             )
                         row_org_obj = default_org
 
-                # Meter lookup (scope by site when provided)
-                try:
-                    if site_name:
+                # Meter lookup (prefer scoping to site when possible, fallback to org-only)
+                target = None
+                if site_name:
+                    try:
                         target = Meter.objects.get(
                             org=row_org_obj,
                             building__name=site_name,
                             identifier=target_ident,
                         )
-                    else:
-                        target = Meter.objects.get(
-                            org=row_org_obj,
-                            identifier=target_ident,
+                    except Meter.DoesNotExist:
+                        # soft fallback: try org-only lookup
+                        try:
+                            target = Meter.objects.get(org=row_org_obj, identifier=target_ident)
+                            self.stdout.write(
+                                self.style.WARNING(
+                                    f"Row {i}: site '{site_name}' not found or no meter match; "
+                                    f"used org-only lookup for identifier={target_ident!r} in org={row_org_obj.name!r}."
+                                )
+                            )
+                        except Meter.DoesNotExist:
+                            raise CommandError(
+                                f"Row {i}: target meter not found: identifier={target_ident!r} "
+                                f"(site={site_name!r}) in org={row_org_obj.name!r}"
+                            )
+                        except Meter.MultipleObjectsReturned:
+                            raise CommandError(
+                                f"Row {i}: multiple meters found for identifier={target_ident!r} in org={row_org_obj.name!r} "
+                                f"(site lookup failed for {site_name!r})."
+                            )
+                else:
+                    try:
+                        target = Meter.objects.get(org=row_org_obj, identifier=target_ident)
+                    except Meter.DoesNotExist:
+                        raise CommandError(
+                            f"Row {i}: target meter not found: identifier={target_ident!r} in org={row_org_obj.name!r}"
                         )
-                except Meter.DoesNotExist:
-                    where = f" (site={site_name!r})" if site_name else ""
-                    raise CommandError(
-                        f"Row {i}: target meter not found: identifier={target_ident!r}{where} in org={row_org_obj.name!r}"
-                    )
-                except Meter.MultipleObjectsReturned:
-                    where = f" (site={site_name!r})" if site_name else ""
-                    raise CommandError(
-                        f"Row {i}: multiple target meters found: identifier={target_ident!r}{where} in org={row_org_obj.name!r}"
-                    )
+                    except Meter.MultipleObjectsReturned:
+                        raise CommandError(
+                            f"Row {i}: multiple meters found for identifier={target_ident!r} in org={row_org_obj.name!r}. "
+                            f"Include a SiteName column to disambiguate."
+                        )
 
                 if target.meter_type != "virtual":
                     raise CommandError(f"Row {i}: target meter {target_ident!r} is not virtual (found {target.meter_type}).")
