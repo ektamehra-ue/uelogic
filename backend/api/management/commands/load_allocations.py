@@ -7,6 +7,18 @@ from django.db import transaction
 from api.models import Organization, Meter, VirtualAllocation
 
 
+"""
+This management command ingests and applies **virtual meter allocation rules** 
+(parent → child relationships with % splits) into the database.  
+
+Purpose:
+- Defines how virtual meters are calculated by distributing consumption 
+  from parent meters into child meters using percentage allocations.
+- Ensures allocation data can be imported consistently from CSV files.  
+- Supports validation to prevent invalid percentages or circular allocations.  
+- Provides a dry-run mode for testing CSV validity without database changes.
+"""
+
 def norm(s):
     return (s or "").strip()
 

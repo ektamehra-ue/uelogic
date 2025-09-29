@@ -8,6 +8,17 @@ from django.utils.dateparse import parse_datetime
 
 from api.models import Organization, Building, Meter, Formula
 
+
+"""
+This management command ingests and applies **formula definitions** for virtual meters into the database.
+
+Purpose:
+- Loads calculation formulas (e.g., sum, difference, ratio, or custom expressions) 
+  that define how one or more meters combine to create derived values.  
+- Allows consistent configuration of formulas via CSV uploads.  
+- Provides validation for syntax and references to existing meters.
+"""
+
 def norm(s):
     return (s or "").strip()
 

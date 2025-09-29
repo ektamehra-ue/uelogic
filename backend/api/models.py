@@ -1,5 +1,24 @@
 from django.db import models
 
+"""
+Core data model for UELogic platform.
+
+Purpose:
+- Defines database schema for Organizations, Buildings, Accounts, Meters,
+  Allocations, Formulas, and Readings.
+- Encodes business rules such as:
+    • Organizations contain buildings and accounts.
+    • Meters can be fiscal, sub, or virtual, and may belong to accounts/buildings.
+    • VirtualAllocations distribute parent meter usage to child meters by %.
+    • Formulas define derived calculations for virtual meters over time windows.
+    • Readings store time series data with provenance and semantics.
+- Provides uniqueness constraints, foreign key relationships, and indexing
+  for efficient lookups.
+
+This schema underpins ingestion, allocation, calculation, and reporting logic
+for the platform.
+"""
+
 # Core / Tenancy
 class Organization(models.Model):
     """

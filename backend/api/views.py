@@ -10,6 +10,21 @@ from .serializers import (
     MeterSerializer, VirtualAllocationSerializer, ReadingSerializer
 )
 
+
+"""
+Django REST Framework (DRF) view layer for UELogic.
+
+Purpose:
+- Exposes CRUD APIs for core domain models: Organization, Building, Account, Meter,
+  VirtualAllocation, and Reading.
+- Provides a reusable BaseViewSet with filtering enabled for all models.
+- Defines the /health endpoint for quick liveness checks.
+- Handles serialization ↔ database mapping via corresponding serializers.
+
+This is the main entry point for the REST API, consumed by the React frontend
+and other integrations (e.g., ingestion scripts).
+"""
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):

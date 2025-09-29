@@ -8,6 +8,18 @@ from django.db import transaction
 from api.models import Organization, Building, Account, Meter
 
 
+"""
+This management command imports the **meter hierarchy** (organization → building → account → meter) 
+from a CSV file into the database.  
+
+Purpose:
+- Establishes the structural relationships between organizations, buildings, accounts, 
+  and their associated fiscal, sub, or virtual meters.  
+- Ensures that all meters and their parent-child links are consistently created in the system.  
+- Provides the baseline data model for reporting, CRUD operations, and flagging.  
+"""
+
+
 def norm(s):
     return (s or "").strip()
 

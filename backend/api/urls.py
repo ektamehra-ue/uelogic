@@ -6,6 +6,16 @@ from .views import (
     MeterViewSet, VirtualAllocationViewSet, ReadingViewSet,
 )
 
+"""
+URL router configuration for UELogic API.
+
+Purpose:
+- Registers REST endpoints for all core viewsets (organizations, buildings, accounts,
+  meters, allocations, readings).
+- Provides a /health route for service monitoring.
+- Uses DRF's DefaultRouter to automatically generate CRUD routes.
+"""
+
 router = DefaultRouter()
 router.register(r"organizations", OrganizationViewSet)
 router.register(r"buildings", BuildingViewSet)
