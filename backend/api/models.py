@@ -92,6 +92,7 @@ class Meter(models.Model):
             models.Index(fields=["building"]),
             models.Index(fields=["account"]),
             models.Index(fields=["meter_type"]),
+            models.Index(fields=["external_id"]),  # NEW: fast serial/MPxN lookups
         ]
 
     def __str__(self):

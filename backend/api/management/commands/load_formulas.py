@@ -98,13 +98,13 @@ class Command(BaseCommand):
         # Explected flixible columns
         org_idx = idx_of("org", "organization", "organisation")
         site_idx = idx_of("site", "sitename", "building", "site name")
-
+        kind_idx   = idx_of("meterkind", "kind")                          # required to identify Virtual/Sub
         target_idx = idx_of("target_identifier", "target", "meter",
                             "virtual_identifier", "virtual meter",
                             "meterpointreferenceid", "meter point reference id", "meterpointreference",)
-        
-        expr_idx = idx_of("expression", "expr", "formula")
-        
+        serial_idx = idx_of("meter_serial_number", "meterserialnumber", "serial", "serialno")
+        mpx_idx    = idx_of("meterpointreferenceid", "mpan", "mprn", "meter point reference id")
+        expr_idx = idx_of("expression", "expr", "formula")    
         start_idx = idx_of("start", "start_utc", "startutc", "begin", "valid_from")
         end_idx = idx_of("end", "end_utc", "endutc", "valid_to", "stop")
 
