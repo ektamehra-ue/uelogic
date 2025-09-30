@@ -50,10 +50,64 @@ def parse_utc(dt_str, row_num):
 class Command(BaseCommand):
     help = "Load Formula rows from formulas CSV. Resolves org via org column, or uniquely by SiteName if org is omitted."
 
+    def resolve_virtual_meter(*, site_name, serial, mpx, ident, strict_site):
+        """
+        Returns (meter, via) where meter is a VIRTUAL meter.
+        Tries in order: serial -> MPxN -> identifier.
+        Uses SiteName to disambiguate when provided.
+        """
+        from django.db.models import Q
+        base = Meter.objects.filter(meter_type=Meter.MeterType.VIRTUAL)
+
+        # serial first
+        if serial:
+            q = base.filter(external_id=serial)
+            if site_name:
+                q_site = q.filter(building__name=site_name)
+                if q_site.count() == 1:
+                    return q_site.get(), f"serial={serial!r} @ {site_name}"
+                if strict_site:
+                    raise CommandError(f"Serial {serial!r} not unique or not found at site={site_name!r}.")
+            if q.count() == 1:
+                return q.get(), f"serial={serial!r}"
+            if q.count() > 1:
+                raise CommandError(f"Serial {serial!r} matches {q.count()} virtual meters; add SiteName to disambiguate.")
+
+        # MPxN (MPAN/MPRN) next
+        if mpx:
+            q = base.filter(external_id=mpx)
+            if site_name:
+                q_site = q.filter(building__name=site_name)
+                if q_site.count() == 1:
+                    return q_site.get(), f"mpx={mpx!r} @ {site_name}"
+                if strict_site:
+                    raise CommandError(f"MPxN {mpx!r} not unique or not found at site={site_name!r}.")
+            if q.count() == 1:
+                return q.get(), f"mpx={mpx!r}"
+            if q.count() > 1:
+                raise CommandError(f"MPxN {mpx!r} matches {q.count()} virtual meters; add SiteName to disambiguate.")
+
+        # internal identifier last
+        if ident:
+            q = base.filter(identifier=ident)
+            if site_name:
+                q = q.filter(building__name=site_name)
+            try:
+                return q.get(), f"identifier={ident!r}{' @ '+site_name if site_name else ''}"
+            except Meter.DoesNotExist:
+                pass
+            except Meter.MultipleObjectsReturned:
+                raise CommandError(f"Identifier {ident!r} is ambiguous; add SiteName.")
+
+        raise CommandError("Could not uniquely resolve a virtual meter via serial/MPxN/identifier.")
+
+
 
     def add_arguments(self, parser):
+        parser.add_argument("--strict-site", action="store_true",
+            help="Error if a number (serial/MPxN) matches multiple meters and SiteName is missing or not unique.")
         parser.add_argument("csv_path", type=str, help="Path to CSV file.")
-        parser.add_argument("--org", type=str, default=None, help="Organization name (used only if CSV lacks an org column; if both are present, CSV value takes precedence)")
+        parser.add_argument("--org", type=str, default=None, help="Organization name (used only if CSV lacks an org column;if both are present, CSV value takes precedence)")
         parser.add_argument("--dry-run", action="store_true", help="Validate only; no DB write")
         parser.add_argument("--delimiter", default=",", help="CSV delimiter (default ,)")
         parser.add_argument(
@@ -68,6 +122,7 @@ class Command(BaseCommand):
         if not csv_path.exists():
             raise CommandError(f"CSV not found: {csv_path}")
 
+        strict_site = opts["strict_site"]
         org_name_cli = opts["org"]
         dry = opts["dry_run"]
         delimiter = opts["delimiter"]
@@ -150,82 +205,9 @@ class Command(BaseCommand):
                 if site_idx is not None:
                     site_name = norm(row[site_idx]) or None
 
-                # Resolve org (prefer explicit org, else infer via site, else fallback to --org)
-                row_org_obj = None
-                if org_idx is not None:
-                    org_name = norm(row[org_idx])
-                    if org_name:
-                        try:
-                            row_org_obj = Organization.objects.get(name=org_name)
-                        except Organization.DoesNotExist:
-                            raise CommandError(f"Row {i}: Organization not found: {org_name!r}")
 
-                if row_org_obj is None:
-                    if site_name:
-                        # Find unique org via building name
-                        qs = Building.objects.filter(name=site_name).select_related("org").distinct()
-                        count = qs.count()
-                        if count == 0:
-                            raise CommandError(
-                                f"Row {i}: Could not infer organization from site '{site_name}'. "
-                                f"Provide an org column or --org."
-                            )
-                        if count > 1:
-                            org_list = ", ".join(sorted({b.org.name for b in qs}))
-                            raise CommandError(
-                                f"Row {i}: Site '{site_name}' exists in multiple orgs [{org_list}]. "
-                                f"Add an org column or use --org to disambiguate."
-                            )
-                        row_org_obj = qs.first().org
-                    else:
-                        if default_org is None:
-                            raise CommandError(
-                                f"Row {i}: No org/sitename for row and no --org provided. "
-                                f"Add an org column, a sitename column, or pass --org."
-                            )
-                        row_org_obj = default_org
 
-                # Meter lookup (prefer scoping to site when possible, fallback to org-only)
-                target = None
-                if site_name:
-                    try:
-                        target = Meter.objects.get(
-                            org=row_org_obj,
-                            building__name=site_name,
-                            identifier=target_ident,
-                        )
-                    except Meter.DoesNotExist:
-                        # soft fallback: try org-only lookup
-                        try:
-                            target = Meter.objects.get(org=row_org_obj, identifier=target_ident)
-                            self.stdout.write(
-                                self.style.WARNING(
-                                    f"Row {i}: site '{site_name}' not found or no meter match; "
-                                    f"used org-only lookup for identifier={target_ident!r} in org={row_org_obj.name!r}."
-                                )
-                            )
-                        except Meter.DoesNotExist:
-                            raise CommandError(
-                                f"Row {i}: target meter not found: identifier={target_ident!r} "
-                                f"(site={site_name!r}) in org={row_org_obj.name!r}"
-                            )
-                        except Meter.MultipleObjectsReturned:
-                            raise CommandError(
-                                f"Row {i}: multiple meters found for identifier={target_ident!r} in org={row_org_obj.name!r} "
-                                f"(site lookup failed for {site_name!r})."
-                            )
-                else:
-                    try:
-                        target = Meter.objects.get(org=row_org_obj, identifier=target_ident)
-                    except Meter.DoesNotExist:
-                        raise CommandError(
-                            f"Row {i}: target meter not found: identifier={target_ident!r} in org={row_org_obj.name!r}"
-                        )
-                    except Meter.MultipleObjectsReturned:
-                        raise CommandError(
-                            f"Row {i}: multiple meters found for identifier={target_ident!r} in org={row_org_obj.name!r}. "
-                            f"Include a SiteName column to disambiguate."
-                        )
+
 
                 if target.meter_type != "virtual":
                     raise CommandError(f"Row {i}: target meter {target_ident!r} is not virtual (found {target.meter_type}).")
