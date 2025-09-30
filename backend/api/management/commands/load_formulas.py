@@ -73,11 +73,6 @@ class Command(BaseCommand):
         delimiter = opts["delimiter"]
         replace = opts["replace"]
 
-        # initialize counters for reporting
-        created = 0
-        updated = 0
-        total = 0
-
         # Read header safely
         with csv_path.open(newline="", encoding="utf-8-sig") as f:
             reader = csv.reader(f, delimiter=delimiter)
@@ -108,13 +103,17 @@ class Command(BaseCommand):
         start_idx = idx_of("start", "start_utc", "startutc", "begin", "valid_from")
         end_idx = idx_of("end", "end_utc", "endutc", "valid_to", "stop")
 
-        missing = [name for name, idx in {
-            "target_identifier": target_idx,
-            "expression": expr_idx,
-            "start": start_idx,
-        }.items() if idx is None]
-        if missing:
-            raise CommandError(f"CSV missing required column(s): {', '.join(missing)}. Found: {headers}")
+        required_missing = []
+        if expr_idx is None:  required_missing.append("expression/formula")
+        if start_idx is None: required_missing.append("start/start_utc")
+        # require at least one identifier: serial OR MPxN OR internal identifier
+        if serial_idx is None and mpx_idx is None and target_idx is None:
+            required_missing.append("one of: MeterSerialNumber / MPAN/MPRN / identifier")
+        if kind_idx is None:
+            required_missing.append("MeterKind")
+        if required_missing:
+            raise CommandError(f"CSV missing required column(s): {', '.join(required_missing)}. Found: {headers}")
+
 
         # Resolve org per row (if provided), else via --org, else error
         default_org = None
@@ -124,7 +123,10 @@ class Command(BaseCommand):
             except Organization.DoesNotExist:
                 raise CommandError(f"Organization not found: {org_name_cli}")
             
-
+        # initialize counters for reporting
+        created = 0
+        updated = 0
+        total = 0
             
         with csv_path.open(newline="", encoding="utf-8-sig") as f, transaction.atomic():
             reader = csv.reader(f, delimiter=delimiter)
