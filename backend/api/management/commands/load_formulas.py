@@ -47,19 +47,15 @@ def parse_utc(dt_str, row_num):
 
     return dt
 
-class Command(BaseCommand):
-    help = "Load Formula rows from formulas CSV. Resolves org via org column, or uniquely by SiteName if org is omitted."
-
-    def resolve_virtual_meter(*, site_name, serial, mpx, ident, strict_site):
+def resolve_target_meter(*, site_name, serial, mpx, ident, strict_site):
         """
-        Returns (meter, via) where meter is a VIRTUAL meter.
-        Tries in order: serial -> MPxN -> identifier.
-        Uses SiteName to disambiguate when provided.
+        Returns (meter, via). Tries serial -> MPxN -> identifier.
+        Uses SiteName to disambiguate when provided. No org required.
         """
-        from django.db.models import Q
-        base = Meter.objects.filter(meter_type=Meter.MeterType.VIRTUAL)
+        from api.models import Meter  # local import to avoid circulars if any
+        base = Meter.objects.all()
 
-        # serial first
+        # 1) serial
         if serial:
             q = base.filter(external_id=serial)
             if site_name:
@@ -67,13 +63,15 @@ class Command(BaseCommand):
                 if q_site.count() == 1:
                     return q_site.get(), f"serial={serial!r} @ {site_name}"
                 if strict_site:
+                    from django.core.management.base import CommandError
                     raise CommandError(f"Serial {serial!r} not unique or not found at site={site_name!r}.")
             if q.count() == 1:
                 return q.get(), f"serial={serial!r}"
             if q.count() > 1:
-                raise CommandError(f"Serial {serial!r} matches {q.count()} virtual meters; add SiteName to disambiguate.")
+                from django.core.management.base import CommandError
+                raise CommandError(f"Serial {serial!r} matches {q.count()} meters; add SiteName to disambiguate.")
 
-        # MPxN (MPAN/MPRN) next
+        # 2) MPxN
         if mpx:
             q = base.filter(external_id=mpx)
             if site_name:
@@ -81,13 +79,15 @@ class Command(BaseCommand):
                 if q_site.count() == 1:
                     return q_site.get(), f"mpx={mpx!r} @ {site_name}"
                 if strict_site:
+                    from django.core.management.base import CommandError
                     raise CommandError(f"MPxN {mpx!r} not unique or not found at site={site_name!r}.")
             if q.count() == 1:
                 return q.get(), f"mpx={mpx!r}"
             if q.count() > 1:
-                raise CommandError(f"MPxN {mpx!r} matches {q.count()} virtual meters; add SiteName to disambiguate.")
+                from django.core.management.base import CommandError
+                raise CommandError(f"MPxN {mpx!r} matches {q.count()} meters; add SiteName to disambiguate.")
 
-        # internal identifier last
+        # 3) identifier
         if ident:
             q = base.filter(identifier=ident)
             if site_name:
@@ -97,11 +97,16 @@ class Command(BaseCommand):
             except Meter.DoesNotExist:
                 pass
             except Meter.MultipleObjectsReturned:
+                from django.core.management.base import CommandError
                 raise CommandError(f"Identifier {ident!r} is ambiguous; add SiteName.")
 
-        raise CommandError("Could not uniquely resolve a virtual meter via serial/MPxN/identifier.")
+        from django.core.management.base import CommandError
+        raise CommandError("Could not uniquely resolve a meter via serial/MPxN/identifier.")
 
 
+
+class Command(BaseCommand):
+    help = "Load Formula rows from formulas CSV. Resolves org via org column, or uniquely by SiteName if org is omitted."
 
     def add_arguments(self, parser):
         parser.add_argument("--strict-site", action="store_true",
@@ -149,9 +154,7 @@ class Command(BaseCommand):
         org_idx = idx_of("org", "organization", "organisation")
         site_idx = idx_of("site", "sitename", "building", "site name")
         kind_idx   = idx_of("meterkind", "kind")                          # required to identify Virtual/Sub
-        target_idx = idx_of("target_identifier", "target", "meter",
-                            "virtual_identifier", "virtual meter",
-                            "meterpointreferenceid", "meter point reference id", "meterpointreference",)
+        target_idx = idx_of("target_identifier", "target", "meter", "identifier")
         serial_idx = idx_of("meter_serial_number", "meterserialnumber", "serial", "serialno")
         mpx_idx    = idx_of("meterpointreferenceid", "mpan", "mprn", "meter point reference id")
         expr_idx = idx_of("expression", "expr", "formula")    
@@ -161,11 +164,9 @@ class Command(BaseCommand):
         required_missing = []
         if expr_idx is None:  required_missing.append("expression/formula")
         if start_idx is None: required_missing.append("start/start_utc")
-        # require at least one identifier: serial OR MPxN OR internal identifier
+        if kind_idx is None:  required_missing.append("MeterKind")
         if serial_idx is None and mpx_idx is None and target_idx is None:
-            required_missing.append("one of: MeterSerialNumber / MPAN/MPRN / identifier")
-        if kind_idx is None:
-            required_missing.append("MeterKind")
+            required_missing.append("one of: MeterSerialNumber / MPAN|MPRN / identifier")
         if required_missing:
             raise CommandError(f"CSV missing required column(s): {', '.join(required_missing)}. Found: {headers}")
 
@@ -187,34 +188,55 @@ class Command(BaseCommand):
             reader = csv.reader(f, delimiter=delimiter)
             next(reader, None)  # skip header
 
-            for i, row in enumerate(reader, start=2):  # i = CSV line number (header=1)
+            for i, row in enumerate(reader, start=2):
                 if not row:
                     continue
                 total += 1
 
-                # per-row fields
-                target_ident = norm(row[target_idx])
-                expression = row[expr_idx]  # keep internal spaces as-is
+                # Site (optional)
+                site_name = norm(row[site_idx]) or None if site_idx is not None else None
+
+                # Meter kind (we support Virtual and Sub targets)
+                kind = (norm(row[kind_idx]) or "").lower()
+                if kind not in {"virtual", "sub"}:
+                    # skip fiscal/others
+                    continue
+
+                # Expression + time window
+                expression = row[expr_idx]
                 start_dt = parse_utc(row[start_idx], i)
                 end_dt = parse_utc(row[end_idx], i) if end_idx is not None else None
                 if end_dt is not None and start_dt >= end_dt:
                     raise CommandError(f"Row {i}: start must be < end (got start={start_dt}, end={end_dt}).")
 
-                # Compute site_name **inside** the loop
-                site_name = None
-                if site_idx is not None:
-                    site_name = norm(row[site_idx]) or None
+                # Numbers-first resolution inputs
+                serial = norm(row[serial_idx]) if serial_idx is not None else None
+                mpx    = norm(row[mpx_idx])    if mpx_idx    is not None else None
+                ident  = norm(row[target_idx]) if target_idx is not None else None
 
+                # Resolve target meter by serial -> MPxN -> identifier
+                try:
+                    target, via = resolve_target_meter(
+                        site_name=site_name,
+                        serial=serial,
+                        mpx=mpx,
+                        ident=ident,
+                        strict_site=strict_site,
+                    )
+                except CommandError as e:
+                    raise CommandError(f"Row {i}: {e}")
 
-
-
-
-                if target.meter_type != "virtual":
-                    raise CommandError(f"Row {i}: target meter {target_ident!r} is not virtual (found {target.meter_type}).")
+                # Enforce intended type
+                expected_type = Meter.MeterType.VIRTUAL if kind == "virtual" else Meter.MeterType.SUB
+                if target.meter_type != expected_type:
+                    raise CommandError(
+                        f"Row {i}: MeterKind={kind} but resolved meter is {target.meter_type} (via {via})."
+                    )
 
                 if dry:
                     continue
 
+                # Upsert by (target_meter, start, end)
                 obj, created_flag = Formula.objects.update_or_create(
                     target_meter=target,
                     start=start_dt,
@@ -225,3 +247,8 @@ class Command(BaseCommand):
                     created += 1
                 else:
                     updated += 1
+
+        # Summary
+        self.stdout.write(self.style.SUCCESS(
+        f"Processed {total} rows. Created: {created}, Updated: {updated}."
+        ))
