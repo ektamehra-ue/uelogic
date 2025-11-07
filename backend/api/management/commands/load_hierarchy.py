@@ -78,7 +78,8 @@ class Command(BaseCommand):
 
         # Map column names found
         col = {k: resolve_key(header_to_idx, k) for k in aliases}
-        required = ["organization", "building", "identifier", "meter_type", "unit"]
+        # 'unit' is optional — we will use --default-unit when missing
+        required = ["organization", "building", "identifier", "meter_type"]
         missing = [k for k in required if not col[k]]
         if missing:
             raise CommandError(f"Missing required column(s): {', '.join(missing)}. Found headers: {headers}")
@@ -107,7 +108,11 @@ class Command(BaseCommand):
             external_id = norm(r[header_to_idx[col["external_id"]]]) if col["external_id"] else ""
             meter_type = norm(r[header_to_idx[col["meter_type"]]]).lower()
             parent_identifier = norm(r[header_to_idx[col["parent_identifier"]]]) if col["parent_identifier"] else ""
-            unit = norm(r[header_to_idx[col["unit"]]])
+            # unit is optional; fall back to the CLI --default-unit when missing or empty
+            if col["unit"]:
+                unit = norm(r[header_to_idx[col["unit"]]]) or options.get("default_unit")
+            else:
+                unit = options.get("default_unit")
             is_active_raw = norm(r[header_to_idx[col["is_active"]]]) if col["is_active"] else "true"
             is_active = (is_active_raw or "true").lower() in {"1", "true", "yes", "y"}
 
