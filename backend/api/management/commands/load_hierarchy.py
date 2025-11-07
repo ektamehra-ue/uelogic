@@ -47,8 +47,8 @@ class Command(BaseCommand):
         parser.add_argument("--default-unit", default="kWh", help="Unit to use when CSV lacks a unit column/value")
         parser.add_argument("--default-meter-type", default="sub", choices=["fiscal","sub","virtual"],
                             help="Meter type to use when CSV lacks/unknown meter_type")
-    parser.add_argument("--update-existing", action="store_true",
-                help="Update existing meter records with CSV values (meter_type/unit/is_active)")
+        parser.add_argument("--update-existing", action="store_true",
+                            help="Update existing meter records with CSV values (meter_type/unit/is_active)")
 
     def handle(self, *args, **options):
         csv_path = Path(options["csv_path"])
