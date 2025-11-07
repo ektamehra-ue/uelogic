@@ -23,6 +23,20 @@ Purpose:
 def norm(s):
     return (s or "").strip()
 
+
+def _map_meter_type(s, default="sub"):
+    """Normalize free-text meter type from CSV into canonical 'fiscal'|'sub'|'virtual'."""
+    if not s:
+        return default
+    k = (s or "").strip().lower()
+    if k in {"virtual", "v", "virtualmeter", "virtual meter"}:
+        return "virtual"
+    if k in {"fiscal", "f", "main", "billing"}:
+        return "fiscal"
+    if k in {"sub", "s", "submeter", "sub-meter"}:
+        return "sub"
+    return default
+
 class Command(BaseCommand):
     help = "Load Organizations, Buildings, Accounts, and Meters from a hierarchy CSV."
 
@@ -33,6 +47,8 @@ class Command(BaseCommand):
         parser.add_argument("--default-unit", default="kWh", help="Unit to use when CSV lacks a unit column/value")
         parser.add_argument("--default-meter-type", default="sub", choices=["fiscal","sub","virtual"],
                             help="Meter type to use when CSV lacks/unknown meter_type")
+    parser.add_argument("--update-existing", action="store_true",
+                help="Update existing meter records with CSV values (meter_type/unit/is_active)")
 
     def handle(self, *args, **options):
         csv_path = Path(options["csv_path"])
@@ -178,6 +194,8 @@ class Command(BaseCommand):
                 bld_obj = m["building_obj"] or Building.objects.get(org=org_obj, name=m["building_name"])
                 acct_obj = m["account_obj"]
 
+                # normalize meter_type from CSV and apply as default
+                meter_type_val = _map_meter_type(m.get("meter_type"), options.get("default_meter_type"))
                 meter, created = Meter.objects.get_or_create(
                     org=org_obj,
                     identifier=m["identifier"],
@@ -185,13 +203,33 @@ class Command(BaseCommand):
                         building=bld_obj,
                         account=acct_obj,
                         external_id=m["external_id"],
-                        meter_type=m["meter_type"],
+                        meter_type=meter_type_val,
                         unit=m["unit"],
                         is_active=m["is_active"],
                     ),
                 )
                 if created:
                     created_counts["meter"] += 1
+                else:
+                    # optionally update existing meter fields to match CSV
+                    if options.get("update_existing"):
+                        changed = False
+                        upd_fields = []
+                        # meter_type may be stored as string like 'sub'/'virtual'
+                        if getattr(meter, "meter_type", None) != meter_type_val:
+                            meter.meter_type = meter_type_val
+                            upd_fields.append("meter_type")
+                            changed = True
+                        if m.get("unit") and getattr(meter, "unit", None) != m.get("unit"):
+                            meter.unit = m.get("unit")
+                            upd_fields.append("unit")
+                            changed = True
+                        if getattr(meter, "is_active", None) != m.get("is_active"):
+                            meter.is_active = m.get("is_active")
+                            upd_fields.append("is_active")
+                            changed = True
+                        if changed:
+                            meter.save(update_fields=upd_fields)
 
             # wire parents
             for org_obj, child_ident, parent_ident in parent_links:
